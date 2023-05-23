@@ -133,6 +133,7 @@ class Panel:
         self._part_arming_type = AREA_ARMING_PERIMETER_DELAY
         self._all_arming_type = AREA_ARMING_MASTER_DELAY
         self._featureProtocol02 = False
+        self._featureCommandRequestAreaAuthorityCF01 = False
         self._featureCommandRequestAreaTextCF01 = False
         self._featureCommandRequestAreaTextCF03 = False
         self._featureCommandRequestConfiguredPointsCF01 = False
@@ -317,6 +318,7 @@ class Panel:
         self._featureProtocol02 = (bitmask[0] & 0x40) != 0
         self._featureCommandRequestAreaTextCF01 = (bitmask[7] & 0x20) != 0
         self._featureCommandRequestAreaTextCF03 = (bitmask[7] & 0x08) != 0
+        self._featureCommandRequestPointsInAreaCF01 = (bitmask[12] & 0x40) != 0
         self._featureCommandRequestConfiguredPointsCF01 = (bitmask[12] & 0x80) != 0
         # Check if serial read command is supported before sending it
         if (bitmask[11] & 0x04) != 0:
@@ -325,11 +327,25 @@ class Panel:
             self.serial_number = int.from_bytes(data[0:6], 'big')
 
     async def _load_areas(self):
-        names = await self._load_names(CMD.AREA_TEXT, CMD.REQUEST_CONFIGURED_AREAS, "AREA", self.max_areas)
+        names = await self._load_names(CMD.AREA_TEXT, CMD.REQUEST_CONFIGURED_AREAS, "AREA")
+        if not names:
+            if self._featureCommandRequestAreaAuthorityCF01:
+                names = await self._load_configured_names(CMD.AREA_AUTHORITY, "AREA")
+            # If none of the above methods work, then we just have to hardcode it
+            else:
+                names = [f"AREA{x}" for x in range(1, 1 + self.max_areas)]
         self.areas = {id: Area(name) for id, name in names.items()}
 
     async def _load_points(self):
-        names = await self._load_names(CMD.POINT_TEXT, CMD.REQUEST_CONFIGURED_POINTS, "ZONE", self.max_zones)
+        names = await self._load_names(CMD.POINT_TEXT, CMD.REQUEST_CONFIGURED_POINTS, "ZONE")
+        if not names:
+            # Request points from all areas we have authority over
+            if self._featureCommandRequestPointsInAreaCF01:
+                for area in self.areas.keys():
+                    names.update(await self._load_configured_names(CMD.REQUEST_POINTS_IN_AREA, "ZONE", bytearray(area.to_bytes(2, 'big'))))
+            # If none of the above methods work, then we just have to hardcode it
+            else:
+                names = [f"ZONE{x}" for x in range(1, 1 + self.max_zones)]
         self.points = {id: Point(name) for id, name in names.items()}
 
     async def _load_names_cf03(self, name_cmd) -> dict[int, str]:
@@ -356,8 +372,8 @@ class Panel:
             names[id] = name.decode('ascii')
         return names
 
-    async def _load_configured_names(self, config_cmd, type):
-        data = await self._connection.send_command(config_cmd)
+    async def _load_configured_names(self, config_cmd, type, extra=bytearray()):
+        data = await self._connection.send_command(config_cmd, extra)
         names = {}
         index = 0
         while data:
@@ -370,7 +386,7 @@ class Panel:
             index+=8
         return names
     
-    async def _load_names(self, name_cmd, config_cmd, type, max) -> dict[int, str]:
+    async def _load_names(self, name_cmd, config_cmd, type) -> dict[int, str]:
         if self._featureCommandRequestAreaTextCF03:
             return await self._load_names_cf03(name_cmd)
         
@@ -381,10 +397,6 @@ class Panel:
 
         if self._featureCommandRequestAreaTextCF01:
             return await self._load_names_cf01(name_cmd, names)
-        
-        # If none of the above methods work, then we just have to hardcode it
-        if not self._featureCommandRequestConfiguredPointsCF01:
-            names = [f"{type}{x}" for x in range(1, 1 + max)]
 
         return names
 

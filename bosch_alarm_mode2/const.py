@@ -176,11 +176,13 @@ class CMD:
     ALARM_MEMORY_DETAIL = 0x23
     # Area group
     REQUEST_CONFIGURED_AREAS = 0x24
+    AREA_AUTHORITY = 0x25
     AREA_STATUS = 0x26
     AREA_ARM = 0x27
     AREA_TEXT = 0x29
     # Point group
     REQUEST_CONFIGURED_POINTS = 0x35
+    REQUEST_POINTS_IN_AREA = 0x36
     POINT_STATUS = 0x38
     POINT_TEXT = 0x3C
     # System group

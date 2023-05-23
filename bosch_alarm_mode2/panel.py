@@ -333,7 +333,7 @@ class Panel:
                 names = await self._load_configured_names(CMD.AREA_AUTHORITY, "AREA")
             # If none of the above methods work, then we just have to hardcode it
             else:
-                names = [f"AREA{x}" for x in range(1, 1 + self.max_areas)]
+                names = {x: f"AREA{x}" for x in range(1, 1 + self.max_areas)}
         self.areas = {id: Area(name) for id, name in names.items()}
 
     async def _load_points(self):
@@ -345,7 +345,7 @@ class Panel:
                     names.update(await self._load_configured_names(CMD.REQUEST_POINTS_IN_AREA, "ZONE", bytearray(area.to_bytes(2, 'big'))))
             # If none of the above methods work, then we just have to hardcode it
             else:
-                names = [f"ZONE{x}" for x in range(1, 1 + self.max_zones)]
+                names = {x:f"ZONE{x}" for x in range(1, 1 + self.max_zones)}
         self.points = {id: Point(name) for id, name in names.items()}
 
     async def _load_names_cf03(self, name_cmd) -> dict[int, str]:

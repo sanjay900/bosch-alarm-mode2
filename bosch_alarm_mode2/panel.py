@@ -128,10 +128,14 @@ class Panel:
         self.serial_number = None
         self.areas = {}
         self.points = {}
+        self.max_areas = 0
+        self.max_zones = 0
         self._part_arming_type = AREA_ARMING_PERIMETER_DELAY
         self._all_arming_type = AREA_ARMING_MASTER_DELAY
         self._featureProtocol02 = False
+        self._featureCommandRequestAreaTextCF01 = False
         self._featureCommandRequestAreaTextCF03 = False
+        self._featureCommandRequestConfiguredPointsCF01 = False
 
     LOAD_BASIC_INFO = 1 << 0
     LOAD_ENTITIES = 1 << 1
@@ -291,26 +295,29 @@ class Panel:
         data = await self._connection.send_command(CMD.WHAT_ARE_YOU)
         self.model = PANEL_MODEL[data[0]]
         self.protocol_version = 'v%d.%d' % (data[5], data[6])
-        # Solution and IMAX panels use one set of arming types, B series panels use another.
+        # Solution and AMAX panels use one set of arming types, B series panels use another.
         if data[0] <= 0x24:
             self._part_arming_type = AREA_ARMING_STAY1
             self._all_arming_type = AREA_ARMING_AWAY
         else:
             self._part_arming_type = AREA_ARMING_PERIMETER_DELAY
             self._all_arming_type = AREA_ARMING_MASTER_DELAY
-
+        
     async def _basicinfo(self):
         commandformat = bytearray()
         commandformat.append(3)
         
         data = await self._connection.send_command(CMD.WHAT_ARE_YOU, commandformat)
         self.model = PANEL_MODEL[data[0]]
+        self.max_zones = PANEL_ZONES_MAX[data[0]]
+        self.max_areas = PANEL_AREAS_MAX[data[0]]
         self.protocol_version = 'v%d.%d' % (data[5], data[6])
         if data[13]: LOG.warning('busy flag: %d', data[13])
         bitmask = data[23:].ljust(33, b'\0')
         self._featureProtocol02 = (bitmask[0] & 0x40) != 0
         self._featureCommandRequestAreaTextCF01 = (bitmask[7] & 0x20) != 0
         self._featureCommandRequestAreaTextCF03 = (bitmask[7] & 0x08) != 0
+        self._featureCommandRequestConfiguredPointsCF01 = (bitmask[12] & 0x80) != 0
         # Check if serial read command is supported before sending it
         if (bitmask[11] & 0x04) != 0:
             data = await self._connection.send_command(
@@ -318,11 +325,11 @@ class Panel:
             self.serial_number = int.from_bytes(data[0:6], 'big')
 
     async def _load_areas(self):
-        names = await self._load_names(CMD.AREA_TEXT, CMD.REQUEST_CONFIGURED_AREAS, "AREA")
+        names = await self._load_names(CMD.AREA_TEXT, CMD.REQUEST_CONFIGURED_AREAS, "AREA", self.max_areas)
         self.areas = {id: Area(name) for id, name in names.items()}
 
     async def _load_points(self):
-        names = await self._load_names(CMD.POINT_TEXT, CMD.REQUEST_CONFIGURED_POINTS, "POINT")
+        names = await self._load_names(CMD.POINT_TEXT, CMD.REQUEST_CONFIGURED_POINTS, "ZONE", self.max_zones)
         self.points = {id: Point(name) for id, name in names.items()}
 
     async def _load_names_cf03(self, name_cmd) -> dict[int, str]:
@@ -362,16 +369,23 @@ class Panel:
                 b >>= 1
             index+=8
         return names
-    async def _load_names(self, name_cmd, config_cmd, type) -> dict[int, str]:
+    
+    async def _load_names(self, name_cmd, config_cmd, type, max) -> dict[int, str]:
         if self._featureCommandRequestAreaTextCF03:
             return await self._load_names_cf03(name_cmd)
         
-        names = await self._load_configured_names(config_cmd, type)
+        names = {}
+        
+        if self._featureCommandRequestConfiguredPointsCF01:
+            names = await self._load_configured_names(config_cmd, type)
 
         if self._featureCommandRequestAreaTextCF01:
             return await self._load_names_cf01(name_cmd, names)
+        
+        # If none of the above methods work, then we just have to hardcode it
+        if not self._featureCommandRequestConfiguredPointsCF01:
+            names = [f"{type}{x}" for x in range(1, 1 + max)]
 
-        # And then if CF01 isn't available, we can just return a list of names
         return names
 
     async def _get_alarms_for_priority(self, priority, last_area=None, last_point=None):
@@ -413,7 +427,7 @@ class Panel:
             response = response[3:]
 
     async def _area_arm(self, area_id, arm_type, code):
-        if self._arming_code != None and code != self._arming_code:
+        if self._arming_code != None and int(code) != int(self._arming_code):
             return
         request = bytearray([arm_type])
         # bitmask with only i-th bit from the left being 1 (section 3.1.4)

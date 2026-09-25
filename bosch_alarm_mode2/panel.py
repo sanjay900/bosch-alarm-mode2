@@ -292,7 +292,7 @@ class Panel:
         await self._area_arm(area_id, self._get_arming_id(delay, *self._all_arming_id))
 
     def is_part_arm_instant_supported(self) -> bool:
-        return self.model.family == PANEL_FAMILY.BG_SERIES
+        return self.model.family in (PANEL_FAMILY.B_SERIES, PANEL_FAMILY.G_SERIES)
 
     async def set_output_active(self, output_id: int) -> None:
         await self._set_output_state(output_id, OUTPUT_STATUS.ACTIVE)
@@ -540,7 +540,7 @@ class Panel:
             LOG.warning("busy flag: %d", data[13])
 
         # Solution and AMAX panels use different arming types from B/G series panels.
-        if data[0] <= 0x28:
+        if self.model.family in (PANEL_FAMILY.SOLUTION, PANEL_FAMILY.AMAX):
             self._partial_arming_id = (AREA_ARMING_STATUS.STAY1, None)
             self._all_arming_id = (AREA_ARMING_STATUS.AWAY, None)
         
@@ -566,7 +566,7 @@ class Panel:
             _supported_format(bitmask[24], [(0x40, 2)]),
             _supported_format(bitmask[16], [(0x20, 1)]),
         )
-        self._history.init_for_panel(data[0])
+        self._history.init_for_panel(self.model.family)
         self._history_cmd = (
             CMD.REQUEST_RAW_HISTORY_EVENTS_EXT
             if bitmask[16] & 0x02

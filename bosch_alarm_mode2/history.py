@@ -205,7 +205,7 @@ class History:
             self._parser = SolutionHistoryParser()
         elif panel_type == PANEL_FAMILY.AMAX:
             self._parser = AmaxHistoryParser()
-        elif panel_type == PANEL_FAMILY.B_SERIES or panel_type == PANEL_FAMILY.G_SERIES or panel_type == PANEL_FAMILY.GV4:
+        elif panel_type == PANEL_FAMILY.B_SERIES or panel_type == PANEL_FAMILY.G_SERIES:
             self._parser = BGHistoryParser()
 
     def _append_error(self, id: int, excp: Exception) -> None:

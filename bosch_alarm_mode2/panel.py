@@ -531,10 +531,12 @@ class Panel:
         except Exception:
             # If the panel doesn't support CF03, then use CF01
             data = await self._send_command(CMD.WHAT_ARE_YOU)
+        if not data[0] in PANEL_MODELS:
+            raise ValueError(f"Unsupported panel model: {data[0]}")
         self.model = PANEL_MODELS[data[0]]
         self.protocol_version = "v%d.%d" % (data[5], data[6])
         # B and G series panels support multiple commands in flight, AMAX and Solution panels do not.
-        if data[0] >= 0xA0 and self._connection:
+        if self.model.family in (PANEL_FAMILY.B_SERIES, PANEL_FAMILY.G_SERIES) and self._connection:
             self._connection.set_max_commands_in_flight(100)
         if data[13]:
             LOG.warning("busy flag: %d", data[13])

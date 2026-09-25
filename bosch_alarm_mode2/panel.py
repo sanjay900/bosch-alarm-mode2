@@ -823,6 +823,15 @@ class Panel:
         LOG.debug("Area %d: %s" % (area_id, AREA_STATUS.TEXT[area_status]))
         return 3
 
+    async def _lockout_commands(self, finalizer: Callable[[], None] | None = None) -> None:
+        if not self._connection:
+            return
+        async with self._connection._command_semaphore:
+            # Add a delay so the panel can finish processing the command
+            await asyncio.sleep(1)
+        if finalizer:
+            finalizer()
+
     async def _delayed_load_history(self) -> None:
         # Some panels seem prone to dropping commands while disarming.
         await asyncio.sleep(30)
@@ -918,8 +927,7 @@ class Panel:
             consumer, finalizer = CONSUMERS[update_type]
             for _ in range(0, n_updates):
                 pos += consumer(data[pos:])
-            if finalizer:
-                finalizer()
+            asyncio.create_task(self._lockout_commands(finalizer))
 
     @staticmethod
     def _get_arming_id(delay: bool, delay_id: int, instant_id: int | None) -> int:        
